@@ -12,19 +12,25 @@ import {transfer} from "@/Modules/ymodem";
 import {Serial} from "@/Modules/web_serial";
 import xterminal from "@/components/xterm";
 import {delay_ms,curr_tm_str} from "@/utils/index";
-
+import {serial as usb_serial} from "@/Modules/google_serial";
  
 export default {
   name: 'HelloWorld',
   components: {Shell:xterminal},
     data(){
         return {
+            MyLog:null,
             serial:null,
+            // hostApi:usb_serial
+            hostApi:navigator.serial?navigator.serial:usb_serial
         }
     },
   props: {
     msg: String,
     config : {type: Object,default: function(){return null }},
+  },
+  created(){
+        if(!this.MyLog) this.MyLog = this.YmodemLog()
   },
   methods: {
     async flash_ymodem(code,pre='',after='') {
@@ -34,18 +40,18 @@ export default {
         const encoder = new TextEncoder();
         const buffer = encoder.encode(code);
         const result = await transfer(this.serial, "code", buffer);
-        console.log("upload file result:",result);
+        this.MyLog("upload file result:",result);
         await delay_ms(500);
         if(after) await this.writeSerial(after);
     },
     writeSerial(data){
         // eslint-disable-next-line
         // debugger
-        if(this.serial) return Promise.reject('!serial')
+        if(!this.serial) return Promise.reject('!serial')
         return this.serial.write(data).then(()=>{
             // console.log("writeSerial OK")
         }).catch(err=>{
-            console.log("writeSerial",err)
+            this.MyLog("writeSerial",err)
         })
     },
     async list_serial(){
@@ -53,29 +59,38 @@ export default {
         try {
             {transfer}
             if(this.serial){
+
+                let cont = await this.$confirm("串口已经打开，是否关闭?", '提示', {
+                    confirmButtonText: '关闭',
+                    cancelButtonText: '取消',
+                    type: 'warning'
+                }).then(() => {
+                    return true;
+                }).catch(() =>{
+                    return false;
+                })
+                if(!cont) return;
                 let readable = self.serial.readable;
                 if(readable){
                     await readable.cancel()
                 }
                 this.serial.close()
             }
-            const port = await navigator.serial.requestPort();
-            console.log("SELECT PORT:",port,port.getInfo())
+            // usb_serial
+            const port = await this.hostApi.requestPort();//navigator.serial.requestPort();
             const serial = new Serial(port);
             let onRecv =(data)=>{
-                // const decoder = new TextDecoder();
-                // console.log("onRecv",decoder.decode(data),data);
                 let xterm = this.$refs.xterm;
                 if(xterm){
                     xterm.write(data)//echo info
                 }
             }
             let onDisconnect =()=>{
-                console.log("onDisconnect")
+                self.MyLog("onDisconnect")
             }
 
             let onConnect =()=>{
-                console.log("onConnect")
+                self.MyLog("onConnect")
             }
 
             serial.on('data',onRecv);
@@ -85,6 +100,7 @@ export default {
             const info = await serial.getInfo();
 
             console.log("GET INFO:",info);
+            this.serial = serial;
             await serial.open({
                 baudRate: 115200,
                 dataBits:8,//7 or 8
@@ -93,10 +109,9 @@ export default {
                 bufferSize:1024,//must less than 16M
                 flowControl:'none',//none||hardware
             }).catch(err=>{
-                console.log("OPEN COM ERROR:",err)
+                self.MyLog("OPEN COM ERROR:",err)
             });
 
-            this.serial = serial;
 
             // const supported = supportedDevices.find(
             //     (d) =>
@@ -127,10 +142,12 @@ export default {
 */            
         } catch (err) {
             console.log(err);
+            self.MyLog(err);
         }
     },
     YmodemLog(){
-        let xterm = this.$refs.xterm;
+        let self = this;
+        
         function f(...arg){
             let msg = curr_tm_str()+":";
             msg += [...arg].map(it=>{
@@ -144,7 +161,8 @@ export default {
                 }
                 return it?it.toString():'';
             }).join(',');
-            if(xterm) xterm.write(msg+"\n")
+            let xterm = self.$refs.xterm;
+            if(xterm) xterm.write(msg+"\r")
         }
         return f
     },
@@ -157,10 +175,11 @@ export default {
                 if(file.size != cont_len){
                     console.log("LEN Size mismatch\r\n");
                 }
-                console.log("============> Load File Name:",name,ext);
-                console.log("RESTORE:",contents,typeof(contents));
+                
                 // eslint-disable-next-line
-                // debugger
+                debugger
+                self.MyLog("============> Load File Name:",name,ext);
+                console.log("RESTORE:",contents,typeof(contents));
                 await transfer(self.serial, name, new Uint8Array(contents),self.YmodemLog()).then((result)=>{
                     if(result && result.totalBytes == result.writtenBytes){
                         self.$message.success('文件传输完毕！')

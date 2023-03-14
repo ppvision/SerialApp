@@ -130,7 +130,7 @@ export function transfer(serial, filename, buffer,logger=console.log) {
 
         /* Send packet */
         async function sendPacket() {
-            logger(`sendPacket seq:${seq}/${file_trunks.length}`);
+            logger(`sendPacket seq:${seq}/${file_trunks.length}  \r`);
             if (seq < file_trunks.length) {
                 var packet = file_trunks[seq];
                 await sendBuffer(packet);

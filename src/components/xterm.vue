@@ -96,7 +96,6 @@ export default{
             if (term._initialized) return
             // 初始化
             term._initialized = true
-
             /*
                 term.write(this.caption+"\n")
                 term.prompt()
